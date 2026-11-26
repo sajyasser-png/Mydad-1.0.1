@@ -13,13 +13,7 @@ export default defineConfig(({mode}) => {
       VitePWA({
         registerType: 'autoUpdate',
         useCredentials: true,
-        includeAssets: [
-          'favicon.ico',
-          'apple-touch-icon.png',
-          'pwa-192x192.png',
-          'pwa-512x512.png',
-          'pwa-maskable-512x512.png',
-        ],
+        includeAssets: [],
         manifest: {
           id: '/',
           name: 'Mydad live',
@@ -35,19 +29,19 @@ export default defineConfig(({mode}) => {
           scope: '/',
           icons: [
             {
-              src: '/pwa-192x192.png',
+              src: '/pwa-192x192.png?v=3',
               sizes: '192x192',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-512x512.png',
+              src: '/pwa-512x512.png?v=3',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any',
             },
             {
-              src: '/pwa-maskable-512x512.png',
+              src: '/pwa-maskable-512x512.png?v=3',
               sizes: '512x512',
               type: 'image/png',
               purpose: 'maskable',
@@ -55,14 +49,30 @@ export default defineConfig(({mode}) => {
           ],
         },
         workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          cacheId: 'midad-live-v3',
+          globPatterns: ['**/*.{js,css,ico,png,svg,woff,woff2}'],
+          ignoreURLParametersMatching: [/^v$/, /^refresh$/],
           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
-          navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api\//, /^\/__/],
+          navigateFallback: null,
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,
           runtimeCaching: [
+            {
+              urlPattern: ({ request }) => request.mode === 'navigate',
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'midad-pages-v3',
+                networkTimeoutSeconds: 3,
+                expiration: {
+                  maxEntries: 5,
+                  maxAgeSeconds: 60 * 60 * 24,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: 'CacheFirst',

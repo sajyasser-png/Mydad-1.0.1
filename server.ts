@@ -1656,19 +1656,19 @@ ${systemInstruction || ''}`;
       orientation: "portrait-primary",
       icons: [
         {
-          src: "/pwa-192x192.png",
+          src: "/pwa-192x192.png?v=3",
           sizes: "192x192",
           type: "image/png",
           purpose: "any"
         },
         {
-          src: "/pwa-512x512.png",
+          src: "/pwa-512x512.png?v=3",
           sizes: "512x512",
           type: "image/png",
           purpose: "any"
         },
         {
-          src: "/pwa-maskable-512x512.png",
+          src: "/pwa-maskable-512x512.png?v=3",
           sizes: "512x512",
           type: "image/png",
           purpose: "maskable"
@@ -1692,6 +1692,8 @@ ${systemInstruction || ''}`;
         if (filePath.endsWith('.webmanifest')) {
           res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
           res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          res.setHeader('Pragma', 'no-cache');
+          res.setHeader('Expires', '0');
         } else if (
           filePath.endsWith('sw.js') ||
           filePath.endsWith('registerSW.js') ||
@@ -1703,11 +1705,15 @@ ${systemInstruction || ''}`;
           filePath.endsWith('favicon.ico')
         ) {
           res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          res.setHeader('Pragma', 'no-cache');
+          res.setHeader('Expires', '0');
         }
       },
     }));
     app.get('*', (_req, res) => {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

@@ -414,13 +414,38 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </div>
           </div>
 
-          <button 
-            onClick={() => onResetApp()}
-            className="w-full h-10 flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 dark:bg-red-900/15 dark:hover:bg-red-900/25 text-red-700 dark:text-red-300 rounded-xl border border-red-200/70 dark:border-red-900/40 transition-colors text-sm font-bold mt-2"
-          >
-            <RotateCcw size={16} />
-            إعادة تعيين التطبيق
-          </button>
+          <div className="space-y-2 mt-2">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  if ('caches' in window) {
+                    const keys = await caches.keys();
+                    await Promise.all(keys.map((k) => caches.delete(k)));
+                  }
+                  if ('serviceWorker' in navigator) {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(regs.map((r) => r.unregister()));
+                  }
+                } catch {}
+                const url = new URL(window.location.href);
+                url.searchParams.set('refresh', String(Date.now()));
+                window.location.replace(url.toString());
+              }}
+              className="w-full h-10 flex items-center justify-center gap-2 bg-amber-100/80 hover:bg-amber-200/80 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 text-amber-900 dark:text-amber-200 rounded-xl border border-amber-300/70 dark:border-amber-800/60 transition-colors text-sm font-bold"
+            >
+              <RefreshCw size={15} />
+              تصفير الكاش وتحديث التطبيق
+            </button>
+
+            <button 
+              onClick={() => onResetApp()}
+              className="w-full h-10 flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 dark:bg-red-900/15 dark:hover:bg-red-900/25 text-red-700 dark:text-red-300 rounded-xl border border-red-200/70 dark:border-red-900/40 transition-colors text-sm font-bold"
+            >
+              <RotateCcw size={16} />
+              إعادة تعيين التطبيق
+            </button>
+          </div>
         </div>
       </div>
     </motion.div>

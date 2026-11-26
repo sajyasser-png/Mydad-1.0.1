@@ -47,14 +47,45 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import App from './App.tsx';
 import './index.css';
 
+const APP_CACHE_VERSION = '2026-11-26-v3';
+
 try {
+  const prevCacheVersion = window.localStorage.getItem('midad_cache_version');
+  if (prevCacheVersion !== APP_CACHE_VERSION) {
+    window.localStorage.setItem('midad_cache_version', APP_CACHE_VERSION);
+    if ('caches' in window) {
+      caches.keys().then((keys) => {
+        return Promise.all(
+          keys
+            .filter((k) => !k.includes('quran-audio-cache'))
+            .map((k) => caches.delete(k))
+        );
+      }).catch(() => {});
+    }
+  }
+
+  let hasReloadedForSW = false;
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hasReloadedForSW) return;
+      hasReloadedForSW = true;
+      window.location.reload();
+    });
+  }
+
   registerSW({
     immediate: true,
     onRegisteredSW(_swUrl, registration) {
       if (registration) {
+        registration.update().catch(() => {});
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') {
+            registration.update().catch(() => {});
+          }
+        });
         setInterval(() => {
           registration.update().catch(() => {});
-        }, 60 * 60 * 1000);
+        }, 15 * 60 * 1000);
       }
     },
     onRegisterError(error) {
