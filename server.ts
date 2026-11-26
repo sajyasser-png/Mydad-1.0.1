@@ -217,12 +217,32 @@ async function startServer() {
     }
   };
 
-  const createGeminiClient = (key: string) =>
+  const preferredApiVersionForModel = (modelName: string): 'v1' | 'v1beta' => {
+    const m = (modelName || '').toLowerCase();
+    if (
+      m.includes('preview') ||
+      m.includes('latest') ||
+      m.includes('exp') ||
+      m.includes('robotics') ||
+      m.includes('tts') ||
+      m.includes('live') ||
+      m.includes('lyria') ||
+      m.includes('transcribe') ||
+      m.includes('decision') ||
+      m.includes('genie') ||
+      m.includes('customtools')
+    ) {
+      return 'v1beta';
+    }
+    return 'v1';
+  };
+
+  const createGeminiClient = (key: string, apiVersion: 'v1' | 'v1beta' = 'v1') =>
     new GoogleGenAI({
       apiKey: key,
-      apiVersion: 'v1beta',
+      ...(apiVersion === 'v1beta' ? { apiVersion: 'v1beta' } : {}),
       httpOptions: {
-        apiVersion: 'v1beta',
+        ...(apiVersion === 'v1beta' ? { apiVersion: 'v1beta' } : {}),
         headers: {
           'User-Agent': 'aistudio-build'
         }
@@ -234,35 +254,22 @@ async function startServer() {
     'gemini-4-neon',
     'gemini-4-argon',
     'gemini-4-carbon',
-    'gemma-4-31b-it',
-    'gemma-4-26b-a4b-it',
-    'gemma-3-27b-it',
-    'gemma-3-12b-it',
-    'gemma-3-4b-it',
-    'gemma-3-1b-it',
-    'gemma-3n-e4b-it',
-    'gemma-3n-e2b-it',
-    'gemma-2-27b-it',
-    'gemma-2-9b-it',
-    'gemma-2-2b-it',
     'gemini-3.8-flash',
     'gemini-3.7-flash',
     'gemini-3.6-flash',
     'gemini-3.5-flash',
     'gemini-3.5-flash-lite',
-    'gemini-3.1-pro-preview',
-    'gemini-3.1-pro-preview-customtools',
-    'gemini-3-flash-preview',
     'gemini-3.1-flash-lite',
     'gemini-3.1-flash-lite-preview',
-    'gemini-2.5-pro',
-    'gemini-3.8-flash',
-    'gemini-3.8-flash-lite',
+    'gemini-3-flash-preview',
+    'gemini-3.1-pro-preview',
+    'gemini-3.1-pro-preview-customtools',
+    'gemma-4-31b-it',
+    'gemma-4-26b-a4b-it',
     'gemini-flash-latest',
     'gemini-flash-lite-latest',
     'gemini-pro-latest',
-    'gemini-robotics-er-2-preview',
-    'gemini-robotics-er-2-streaming-preview'
+    'gemini-robotics-er-2-preview'
   ];
 
   const isGemini4Model = (mName: string): boolean => mName.toLowerCase().startsWith('gemini-4');
@@ -271,13 +278,40 @@ async function startServer() {
   const isGemmaModel = (mName: string): boolean => mName.toLowerCase().startsWith('gemma-');
   const isRoboticsModel = (mName: string): boolean => mName.toLowerCase().includes('robotics');
 
-  const isDeprecatedOrNonChatGeminiModel = (_mName: string): boolean => {
-    return false;
+  const isNonChatOrRetiredGeminiModel = (mName: string): boolean => {
+    const m = (mName || '').toLowerCase();
+    return (
+      m.startsWith('gemini-1.') ||
+      m.startsWith('gemini-2.0') ||
+      m.startsWith('gemini-2.5') ||
+      m.startsWith('gemma-2-') ||
+      m.startsWith('gemma-3-') ||
+      m.startsWith('gemma-3n-') ||
+      m === 'gemini-3.8-flash-lite' ||
+      m.includes('embedding') ||
+      m.includes('aqa') ||
+      m.includes('imagen') ||
+      m.includes('-image') ||
+      m.includes('nano-banana') ||
+      m.includes('-tts') ||
+      m.includes('lyria') ||
+      m.includes('transcribe') ||
+      m.includes('-live') ||
+      m.includes('native-audio') ||
+      m.includes('streaming') ||
+      m.includes('omni') ||
+      m.includes('genie') ||
+      m.includes('veo') ||
+      m.includes('antigravity') ||
+      m.includes('deep-research') ||
+      m.includes('computer-use') ||
+      m.includes('decision')
+    );
   };
 
   const supportsThinking = (mName: string): boolean => {
     const m = mName.toLowerCase();
-    if (isGemmaModel(m) || isRoboticsModel(m) || m.startsWith('gemini-3.5')) return false;
+    if (isGemmaModel(m) || isRoboticsModel(m)) return false;
     return isGemini4Model(m) || isGemini3Model(m) || isGemini25Model(m);
   };
 
@@ -291,7 +325,10 @@ async function startServer() {
     if (!rawModel) return 'gemini-4-hydrogen';
     const trimmed = rawModel.trim().replace(/^models\//i, '');
     if (!trimmed) return 'gemini-4-hydrogen';
-    if (trimmed.toLowerCase() === 'gemini-3-flash') return 'gemini-3-flash-preview';
+    const lower = trimmed.toLowerCase();
+    if (lower === 'gemini-3-flash') return 'gemini-3-flash-preview';
+    if (lower === 'gemini-2.5-flash' || lower === 'gemini-2.5-flash-lite' || lower === 'gemini-3.8-flash-lite') return 'gemini-3.5-flash-lite';
+    if (lower === 'gemini-2.5-pro') return 'gemini-3.1-pro-preview';
     return trimmed;
   };
 
@@ -445,21 +482,25 @@ async function startServer() {
     const fallbackModels = reqWebSearch
       ? [
           requestedModel,
+          'gemini-3.5-flash-lite',
           'gemini-3.1-flash-lite',
           'gemini-3.1-flash-lite-preview',
-          'gemini-robotics-er-2-preview',
           'gemini-flash-lite-latest',
-          'gemini-3-flash-preview',
-          'gemini-4-hydrogen'
+          'gemini-robotics-er-2-preview',
+          'gemma-4-26b-a4b-it',
+          'gemini-4-hydrogen',
+          'gemini-3-flash-preview'
         ]
       : [
           requestedModel,
+          'gemini-3.5-flash-lite',
           'gemini-3.1-flash-lite',
           'gemini-3.1-flash-lite-preview',
           'gemini-flash-lite-latest',
+          'gemma-4-26b-a4b-it',
           'gemini-robotics-er-2-preview',
-          'gemini-3-flash-preview',
-          'gemini-4-hydrogen'
+          'gemini-4-hydrogen',
+          'gemini-3-flash-preview'
         ];
 
     const attempts: AttemptConfig[] = [];
@@ -622,13 +663,10 @@ async function startServer() {
       geminiConfig.systemInstruction = systemInstruction;
     }
 
-    // Do not pass temperature/sampling params to gemini-4-* models per Gemini API spec
-    if (!isGemini4Model(modelName) && typeof config?.temperature === 'number') {
+    // Per official Gemini API docs: do not pass deprecated sampling params (temperature/topP/topK)
+    // or small maxOutputTokens caps to gemini-4-* / gemini-3-* models (maxOutputTokens includes thinking tokens)
+    if (!isGemini4Model(modelName) && !isGemini3Model(modelName) && typeof config?.temperature === 'number') {
       geminiConfig.temperature = config.temperature;
-    }
-
-    if (typeof config?.maxOutputTokens === 'number' && config.maxOutputTokens > 0) {
-      geminiConfig.maxOutputTokens = config.maxOutputTokens;
     }
 
     if (attempt.enableWebSearch && supportsNativeGoogleSearch(modelName)) {
@@ -644,9 +682,9 @@ async function startServer() {
 
     if (attempt.enableDeepThinking && supportsThinking(modelName)) {
       if (isGemini4Model(modelName) || isGemini3Model(modelName)) {
-        geminiConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
+        geminiConfig.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH, includeThoughts: true };
       } else if (isGemini25Model(modelName)) {
-        geminiConfig.thinkingConfig = { thinkingBudget: 8192 };
+        geminiConfig.thinkingConfig = { thinkingBudget: 8192, includeThoughts: true };
       }
     }
 
@@ -683,11 +721,11 @@ async function startServer() {
       const candidateKeys = getCandidateKeys(apiKey);
       if (candidateKeys.length === 0) return res.status(401).json({ error: "Gemini API key is missing" });
 
-      const chatModels = ['gemini-3.1-flash-lite', 'gemini-3.1-flash-lite-preview', 'gemini-flash-lite-latest', 'gemini-3-flash-preview', 'gemini-robotics-er-2-preview'];
+      const chatModels = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.1-flash-lite-preview', 'gemini-flash-lite-latest', 'gemma-4-26b-a4b-it', 'gemini-robotics-er-2-preview', 'gemini-4-hydrogen', 'gemini-3-flash-preview'];
       
       const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
       if (history && Array.isArray(history)) {
-        history.slice(-12).forEach((h: any) => {
+        history.forEach((h: any) => {
           if (h.text && (h.sender === 'user' || h.sender === 'model')) {
             contents.push({
               role: h.sender === 'user' ? 'user' : 'model',
@@ -708,9 +746,10 @@ ${systemInstruction || ''}`;
 
       let replyText = "";
       let lastError: any = null;
-      for (const activeKey of candidateKeys) {
-        const ai = createGeminiClient(activeKey);
-        for (const candidateModel of chatModels) {
+      for (const candidateModel of chatModels) {
+        const apiVer = preferredApiVersionForModel(candidateModel);
+        for (const activeKey of candidateKeys) {
+          const ai = createGeminiClient(activeKey, apiVer);
           try {
             const isGemma = isGemmaModel(candidateModel);
             const modelContents = isGemma
@@ -782,6 +821,7 @@ ${systemInstruction || ''}`;
       const deadModelsByKey = new Map<string, Set<string>>();
       const invalidKeys = new Set<string>();
       for (const currentAttempt of attempts) {
+        const preferredVer = preferredApiVersionForModel(currentAttempt.model);
         for (const activeKey of candidateKeys) {
           if (invalidKeys.has(activeKey)) continue;
           let deadModelsForKey = deadModelsByKey.get(activeKey);
@@ -790,7 +830,7 @@ ${systemInstruction || ''}`;
             deadModelsByKey.set(activeKey, deadModelsForKey);
           }
           if (deadModelsForKey.has(currentAttempt.model)) continue;
-          const ai = createGeminiClient(activeKey);
+          const ai = createGeminiClient(activeKey, preferredVer);
           try {
             const searchData = currentAttempt.useServerSearchFallback ? await getServerSearchData() : null;
             const contents = buildGeminiContents(
@@ -817,11 +857,18 @@ ${systemInstruction || ''}`;
               });
             } catch (innerErr: any) {
               const innerMsg = String(innerErr?.message || innerErr);
-              // If urlContext or thinkingConfig caused a 400 on a specific model, retry cleanly
-              if (innerMsg.includes('400') && !innerMsg.toLowerCase().includes('not supported') && !innerMsg.toLowerCase().includes('not found')) {
+              // If v1 returned 404 (preview/alias model), retry transparently on v1beta
+              if (preferredVer === 'v1' && (innerMsg.includes('404') || innerMsg.includes('NOT_FOUND')) && !innerMsg.toLowerCase().includes('no longer available')) {
+                const betaAi = createGeminiClient(activeKey, 'v1beta');
+                response = await betaAi.models.generateContent({
+                  model: currentAttempt.model,
+                  contents,
+                  config: geminiConfig
+                });
+              } else if (innerMsg.includes('400') && !innerMsg.toLowerCase().includes('not supported') && !innerMsg.toLowerCase().includes('not found')) {
                 const cleanConfig = buildGeminiRequestConfig(
                   currentAttempt.model,
-                   undefined,
+                  undefined,
                   config,
                   { enableWebSearch: currentAttempt.enableWebSearch, enableDeepThinking: false },
                   contents,
@@ -869,16 +916,18 @@ ${systemInstruction || ''}`;
           } catch (e: any) {
             lastError = e;
             const errMsg = String(e?.message || e);
-            console.warn(`[Generate] Model ${currentAttempt.model} (nativeSearch=${currentAttempt.enableWebSearch}, serverSearch=${currentAttempt.useServerSearchFallback}) failed:`, errMsg);
-            if (
+            console.warn(`[Generate] Model ${currentAttempt.model} (ver=${preferredVer}, nativeSearch=${currentAttempt.enableWebSearch}, serverSearch=${currentAttempt.useServerSearchFallback}) failed:`, errMsg);
+            const isPermanentNotFound =
               errMsg.includes("404") ||
-              errMsg.includes("429") ||
-              errMsg.includes("503") ||
               errMsg.includes("NOT_FOUND") ||
-              errMsg.includes("RESOURCE_EXHAUSTED") ||
               errMsg.toLowerCase().includes("no longer available") ||
               errMsg.toLowerCase().includes("is not found") ||
-              errMsg.toLowerCase().includes("not supported for generatecontent")
+              errMsg.toLowerCase().includes("not supported for generatecontent");
+            // CRITICAL: If native Google Search grounding hit 429/503, do NOT mark the model itself as dead!
+            // Let the exact same model run its next attempt with server-side search fallback.
+            if (
+              isPermanentNotFound ||
+              (!currentAttempt.enableWebSearch && (errMsg.includes("429") || errMsg.includes("503") || errMsg.includes("RESOURCE_EXHAUSTED")))
             ) {
               deadModelsForKey.add(currentAttempt.model);
             }
@@ -925,6 +974,7 @@ ${systemInstruction || ''}`;
       const deadModelsByKey = new Map<string, Set<string>>();
       const invalidKeys = new Set<string>();
       for (const currentAttempt of attempts) {
+        const preferredVer = preferredApiVersionForModel(currentAttempt.model);
         for (const activeKey of candidateKeys) {
           if (invalidKeys.has(activeKey)) continue;
           let deadModelsForKey = deadModelsByKey.get(activeKey);
@@ -933,7 +983,7 @@ ${systemInstruction || ''}`;
             deadModelsByKey.set(activeKey, deadModelsForKey);
           }
           if (deadModelsForKey.has(currentAttempt.model)) continue;
-          const ai = createGeminiClient(activeKey);
+          const ai = createGeminiClient(activeKey, preferredVer);
           try {
             const searchData = currentAttempt.useServerSearchFallback ? await getServerSearchData() : null;
             const contents = buildGeminiContents(
@@ -960,7 +1010,14 @@ ${systemInstruction || ''}`;
               });
             } catch (innerErr: any) {
               const innerMsg = String(innerErr?.message || innerErr);
-              if (innerMsg.includes('400') && !innerMsg.toLowerCase().includes('not supported') && !innerMsg.toLowerCase().includes('not found')) {
+              if (preferredVer === 'v1' && (innerMsg.includes('404') || innerMsg.includes('NOT_FOUND')) && !innerMsg.toLowerCase().includes('no longer available')) {
+                const betaAi = createGeminiClient(activeKey, 'v1beta');
+                responseStream = await betaAi.models.generateContentStream({
+                  model: currentAttempt.model,
+                  contents,
+                  config: geminiConfig
+                });
+              } else if (innerMsg.includes('400') && !innerMsg.toLowerCase().includes('not supported') && !innerMsg.toLowerCase().includes('not found')) {
                 const cleanConfig = buildGeminiRequestConfig(
                   currentAttempt.model,
                   undefined,
@@ -985,8 +1042,25 @@ ${systemInstruction || ''}`;
             }
 
             // Peek first chunk before sending SSE headers so if the stream rejects on first iteration (e.g., 429/404/503), we can transparently try the next attempt!
-            const iterator = responseStream[Symbol.asyncIterator]();
-            const firstStep = await iterator.next();
+            let iterator = responseStream[Symbol.asyncIterator]();
+            let firstStep;
+            try {
+              firstStep = await iterator.next();
+            } catch (peekErr: any) {
+              const peekMsg = String(peekErr?.message || peekErr);
+              if (preferredVer === 'v1' && (peekMsg.includes('404') || peekMsg.includes('NOT_FOUND')) && !peekMsg.toLowerCase().includes('no longer available')) {
+                const betaAi = createGeminiClient(activeKey, 'v1beta');
+                responseStream = await betaAi.models.generateContentStream({
+                  model: currentAttempt.model,
+                  contents,
+                  config: geminiConfig
+                });
+                iterator = responseStream[Symbol.asyncIterator]();
+                firstStep = await iterator.next();
+              } else {
+                throw peekErr;
+              }
+            }
 
             res.setHeader('Content-Type', 'text/event-stream');
             res.setHeader('Cache-Control', 'no-cache');
@@ -1037,17 +1111,18 @@ ${systemInstruction || ''}`;
           } catch (e: any) {
             lastError = e;
             const errMsg = String(e?.message || e);
-            console.warn(`[Stream] Model ${currentAttempt.model} (nativeSearch=${currentAttempt.enableWebSearch}, serverSearch=${currentAttempt.useServerSearchFallback}) failed:`, errMsg);
+            console.warn(`[Stream] Model ${currentAttempt.model} (ver=${preferredVer}, nativeSearch=${currentAttempt.enableWebSearch}, serverSearch=${currentAttempt.useServerSearchFallback}) failed:`, errMsg);
             if (res.headersSent) throw e;
-            if (
+            const isPermanentNotFound =
               errMsg.includes("404") ||
-              errMsg.includes("429") ||
-              errMsg.includes("503") ||
               errMsg.includes("NOT_FOUND") ||
-              errMsg.includes("RESOURCE_EXHAUSTED") ||
               errMsg.toLowerCase().includes("no longer available") ||
               errMsg.toLowerCase().includes("is not found") ||
-              errMsg.toLowerCase().includes("not supported for generatecontent")
+              errMsg.toLowerCase().includes("not supported for generatecontent");
+            // CRITICAL: If native Google Search grounding hit 429/503, do NOT mark the model itself as dead!
+            if (
+              isPermanentNotFound ||
+              (!currentAttempt.enableWebSearch && (errMsg.includes("429") || errMsg.includes("503") || errMsg.includes("RESOURCE_EXHAUSTED")))
             ) {
               deadModelsForKey.add(currentAttempt.model);
             }
@@ -1095,9 +1170,7 @@ ${systemInstruction || ''}`;
       }
 
       let lastError = null;
-      const ai = createGeminiClient(finalKey);
-
-      const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+      const ai = createGeminiClient(finalKey, 'v1');
 
       for (let i = 0; i < modelsToTry.length; i++) {
         const currentModel = modelsToTry[i];
@@ -1119,13 +1192,12 @@ ${systemInstruction || ''}`;
               model: currentModel,
               contents: [{ role: 'user', parts: [{ text: prompt }] }],
               config: {
-                responseModalities: [Modality.IMAGE],
                 imageConfig: {
                   aspectRatio: config?.aspectRatio || '1:1'
                 }
               }
             });
-            const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+            const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData?.data);
             base64Image = part?.inlineData?.data;
           }
           
@@ -1137,12 +1209,8 @@ ${systemInstruction || ''}`;
           
           throw new Error(`لم يتم استلام بيانات الصورة من ${currentModel}.`);
         } catch (e: any) {
-          console.warn(`[ImageGen] Model ${currentModel} failed, trying next fallback:`, e);
+          console.warn(`[ImageGen] Model ${currentModel} failed, trying next fallback:`, e?.message || e);
           lastError = e;
-          // If we have more models to try, sleep before next attempt
-          if (i < modelsToTry.length - 1) {
-            await sleep(2000); 
-          }
         }
       }
 
@@ -1160,7 +1228,7 @@ ${systemInstruction || ''}`;
 
     const requestedModel = model || 'gemini-3.8-flash-lite-tts';
     const modelsToTry = [requestedModel];
-    const fallbackList = ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts', 'gemini-3.1-flash-tts-preview', 'gemini-2.5-flash'];
+    const fallbackList = ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts', 'gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts'];
     for (const m of fallbackList) {
       if (!modelsToTry.includes(m)) {
         modelsToTry.push(m);
@@ -1170,12 +1238,12 @@ ${systemInstruction || ''}`;
     let lastError = null;
     for (const currentModel of modelsToTry) {
       try {
-        const ai = createGeminiClient(finalKey);
+        const ai = createGeminiClient(finalKey, 'v1beta');
         const response = await ai.models.generateContent({
           model: currentModel,
-          contents: [{ parts: [{ text: text }] }],
+          contents: [{ role: 'user', parts: [{ text: text }] }],
           config: {
-            responseModalities: [Modality.AUDIO],
+            responseModalities: ["AUDIO"],
             speechConfig: {
               voiceConfig: {
                 prebuiltVoiceConfig: { voiceName: voiceName as any },
@@ -1184,15 +1252,14 @@ ${systemInstruction || ''}`;
           },
         });
 
-        const part = response.candidates?.[0]?.content?.parts?.[0];
+        const part = response.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData?.data);
         if (part?.inlineData?.data) {
-          return res.json({ audioData: part.inlineData.data, mimeType: part.inlineData.mimeType });
+          return res.json({ audioData: part.inlineData.data, mimeType: part.inlineData.mimeType || 'audio/wav' });
         } else {
-          console.warn(`[Speech] Model ${currentModel} returned content but no audio data. Response structure:`, JSON.stringify(response.candidates?.[0]?.content || {}, null, 2));
           throw new Error(`No audio data received from ${currentModel}`);
         }
       } catch (e: any) {
-        console.warn(`[Speech] Model ${currentModel} failed, trying next fallback:`, e);
+        console.warn(`[Speech] Model ${currentModel} failed, trying next fallback:`, e?.message || e);
         lastError = e;
       }
     }
@@ -1205,8 +1272,6 @@ ${systemInstruction || ''}`;
       const { apiKey, base64Audio, mimeType } = req.body;
       const finalKey = getFinalKey(apiKey);
       if (!finalKey) return res.status(401).json({ error: "Gemini API key is missing" });
-
-      const ai = createGeminiClient(finalKey);
       
       const contents = {
         parts: [
@@ -1224,14 +1289,15 @@ ${systemInstruction || ''}`;
 
       const modelsToTry = [
         'gemini-3.5-transcribe',
-        'gemini-4-hydrogen',
-        'gemini-3.8-flash',
-        'gemini-3.1-flash-lite'
+        'gemini-3.5-flash-lite',
+        'gemini-3.1-flash-lite',
+        'gemini-4-hydrogen'
       ];
       let lastError = null;
 
       for (const m of modelsToTry) {
         try {
+          const ai = createGeminiClient(finalKey, preferredApiVersionForModel(m));
           const response = await ai.models.generateContent({
             model: m,
             contents,
@@ -1360,24 +1426,28 @@ ${systemInstruction || ''}`;
           for (const keyToTry of candidateKeys) {
             try {
               const allRawModels: any[] = [];
-              let pageToken = '';
-              do {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key=${keyToTry}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
-                const response = await fetch(url);
-                if (!response.ok) {
-                  const errText = await response.text().catch(() => '');
-                  throw new Error(`Gemini API returned status ${response.status}: ${errText}`);
-                }
-                const data: any = await response.json();
-                if (Array.isArray(data.models)) {
-                  allRawModels.push(...data.models);
-                }
-                pageToken = data.nextPageToken || '';
-              } while (pageToken);
+              for (const apiVer of ['v1', 'v1beta']) {
+                let pageToken = '';
+                do {
+                  const url = `https://generativelanguage.googleapis.com/${apiVer}/models?pageSize=100&key=${keyToTry}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+                  const response = await fetch(url);
+                  if (!response.ok) {
+                    if (apiVer === 'v1') break;
+                    const errText = await response.text().catch(() => '');
+                    throw new Error(`Gemini API returned status ${response.status}: ${errText}`);
+                  }
+                  const data: any = await response.json();
+                  if (Array.isArray(data.models)) {
+                    allRawModels.push(...data.models);
+                  }
+                  pageToken = data.nextPageToken || '';
+                } while (pageToken);
+              }
 
               const apiModels = allRawModels
+                .filter((m: any) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
                 .map((m: any) => (m.name || '').replace('models/', '').trim())
-                .filter(Boolean);
+                .filter((id: string) => !!id && !isNonChatOrRetiredGeminiModel(id));
 
               models = Array.from(new Set([
                 ...CURATED_GEMINI_CHAT_MODELS,
@@ -1563,12 +1633,10 @@ ${systemInstruction || ''}`;
         return res.status(400).json({ error: "Gemini API Key is required" });
       }
 
-      const ai = createGeminiClient(keyToUse);
+      const ai = createGeminiClient(keyToUse, 'v1beta');
       const candidateAgents = [
         'deep-research-preview-04-2026',
-        'deep-research-pro-preview',
-        'deep-research-preview',
-        'deep-research-agent'
+        'deep-research-max-preview-04-2026'
       ];
 
       let lastError: any = null;
@@ -1751,7 +1819,7 @@ ${systemInstruction || ''}`;
 
     for (const modelName of candidateModels) {
       try {
-        const ai = createGeminiClient(finalKey);
+        const ai = createGeminiClient(finalKey, 'v1beta');
 
         session = await ai.live.connect({
           model: modelName,

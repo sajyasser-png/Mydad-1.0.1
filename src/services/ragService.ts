@@ -17,8 +17,7 @@ Output ONLY valid JSON with no markdown in this format:
   "hadithQuery": "specific keyword to search in Hadith, optional"
 }`;
     
-    // Use high-quota lite model for background intent classification so we don't drain gemini-3-flash-preview's 20/day free quota
-    const response = await callAI('gemini', [{ role: 'user', content: prompt }], 'gemini-3.1-flash-lite', { temperature: 0.1 });
+    const response = await callAI('gemini', [{ role: 'user', content: prompt }], 'gemini-3.5-flash-lite');
     let text = response.content.replace(/```json/g, '').replace(/```/g, '').trim();
     return JSON.parse(text);
   } catch (e) {

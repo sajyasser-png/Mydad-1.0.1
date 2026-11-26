@@ -741,16 +741,7 @@ export const MidadAlRahman = React.memo(({
     setIsLoading(true);
 
     try {
-      // Compression algorithm to save quota:
-      // Keep the last 6 messages intact. For older messages, truncate their content to a short summary to save tokens.
-      const historyLimit = 20; 
-      const recentLimit = 6;
-      const limitedMessages = messages.slice(-historyLimit).map((msg, idx, arr) => {
-        if (arr.length - idx > recentLimit && typeof msg.content === 'string' && msg.content.length > 200) {
-          return { ...msg, content: msg.content.substring(0, 150) + '... [محتوى مضغوط لتوفير الحصة]' };
-        }
-        return msg;
-      });
+      const fullConversationHistory = messages;
 
       const [provider, model] = selectedModel.split('|');
 
@@ -827,7 +818,7 @@ ${customInstructions ? `تعليمة خاصة من المستخدم: ${customIns
 
       const aiMessages: AIMessage[] = [
         { role: 'system', content: systemInstruction },
-        ...limitedMessages,
+        ...fullConversationHistory,
         userMessage
       ];
 
@@ -850,9 +841,10 @@ ${customInstructions ? `تعليمة خاصة من المستخدم: ${customIns
 
           const candidateModels = Array.from(new Set([
             normalizeGeminiChatModel(model),
+            'gemini-3.5-flash-lite',
+            'gemini-3.1-flash-lite',
             'gemini-4-hydrogen',
-            'gemini-3-flash-preview',
-            'gemini-3.1-flash-lite'
+            'gemini-3-flash-preview'
           ]));
           let fullContent = '';
           let fullThought = '';
@@ -919,7 +911,7 @@ ${customInstructions ? `تعليمة خاصة من المستخدم: ${customIns
 
               const imagePromptResponse = await callAIWithFailover('gemini', [
                 { role: 'user', content: imageDescriptionPrompt }
-              ], 'gemini-4-hydrogen', { temperature: 0.7, maxOutputTokens: 256 });
+              ], 'gemini-3.5-flash-lite');
               
               if (imagePromptResponse && imagePromptResponse.content) {
                 const cleanPrompt = imagePromptResponse.content.trim()
@@ -991,9 +983,10 @@ ${customInstructions ? `تعليمة خاصة من المستخدم: ${customIns
 
             const candidateModels = Array.from(new Set([
               normalizeGeminiChatModel(model),
+              'gemini-3.5-flash-lite',
+              'gemini-3.1-flash-lite',
               'gemini-4-hydrogen',
-              'gemini-3-flash-preview',
-              'gemini-3.1-flash-lite'
+              'gemini-3-flash-preview'
             ]));
             let fullContent = '';
             let fullThought = '';
@@ -1062,7 +1055,7 @@ ${fullContent.substring(0, 500)}`;
 
                 const imagePromptResponse = await callAIWithFailover('gemini', [
                   { role: 'user', content: imageDescriptionPrompt }
-                ], 'gemini-4-hydrogen', { temperature: 0.7, maxOutputTokens: 256 });
+                ], 'gemini-3.5-flash-lite');
                 
                 if (imagePromptResponse && imagePromptResponse.content) {
                   const cleanPrompt = imagePromptResponse.content.trim()
@@ -1102,8 +1095,6 @@ ${fullContent.substring(0, 500)}`;
         let executedModel = model;
         try {
           executedModel = await callAIStream(provider as AIProviderKey, aiMessages, model, {
-            temperature: temperature,
-            maxOutputTokens: maxTokens,
             enableWebSearch: enableWebSearch,
             enableDeepThinking: enableDeepThinking
           }, (chunk, groundingMetadata, thought, modelName) => {
@@ -1146,7 +1137,7 @@ ${fullContent}`;
 
               const imageDescriptionResponse = await callAI('gemini', [
                 { role: 'user', content: imageDescriptionPrompt }
-              ], 'gemini-4-hydrogen');
+              ], 'gemini-3.5-flash-lite');
 
               if (imageDescriptionResponse && imageDescriptionResponse.content) {
                 const cleanPrompt = imageDescriptionResponse.content.trim()
@@ -1168,8 +1159,6 @@ ${fullContent}`;
           
           try {
             const response = await callAIWithFailover(provider as AIProviderKey, aiMessages, model, {
-              temperature: temperature,
-              maxOutputTokens: maxTokens,
               enableWebSearch: enableWebSearch,
               enableDeepThinking: enableDeepThinking
             });
@@ -1188,7 +1177,7 @@ ${response.content}`;
 
                 const imageDescriptionResponse = await callAI('gemini', [
                   { role: 'user', content: imageDescriptionPrompt }
-                ], 'gemini-4-hydrogen');
+                ], 'gemini-3.5-flash-lite');
 
                 if (imageDescriptionResponse && imageDescriptionResponse.content) {
                   const cleanPrompt = imageDescriptionResponse.content.trim()
@@ -1235,7 +1224,7 @@ ${response.content}`;
 
             const imageDescriptionResponse = await callAI('gemini', [
               { role: 'user', content: imageDescriptionPrompt }
-            ], 'gemini-4-hydrogen');
+            ], 'gemini-3.5-flash-lite');
 
             if (imageDescriptionResponse && imageDescriptionResponse.content) {
               const cleanPrompt = imageDescriptionResponse.content.trim()

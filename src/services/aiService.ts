@@ -12,35 +12,22 @@ export const AI_PROVIDERS = {
       'gemini-4-neon',
       'gemini-4-argon',
       'gemini-4-carbon',
-      'gemma-4-31b-it',
-      'gemma-4-26b-a4b-it',
-      'gemma-3-27b-it',
-      'gemma-3-12b-it',
-      'gemma-3-4b-it',
-      'gemma-3-1b-it',
-      'gemma-3n-e4b-it',
-      'gemma-3n-e2b-it',
-      'gemma-2-27b-it',
-      'gemma-2-9b-it',
-      'gemma-2-2b-it',
       'gemini-3.8-flash',
       'gemini-3.7-flash',
       'gemini-3.6-flash',
       'gemini-3.5-flash',
       'gemini-3.5-flash-lite',
-      'gemini-3.1-pro-preview',
-      'gemini-3.1-pro-preview-customtools',
-      'gemini-3-flash-preview',
       'gemini-3.1-flash-lite',
       'gemini-3.1-flash-lite-preview',
-      'gemini-2.5-pro',
-      'gemini-2.5-flash',
-      'gemini-2.5-flash-lite',
+      'gemini-3-flash-preview',
+      'gemini-3.1-pro-preview',
+      'gemini-3.1-pro-preview-customtools',
+      'gemma-4-31b-it',
+      'gemma-4-26b-a4b-it',
       'gemini-flash-latest',
       'gemini-flash-lite-latest',
       'gemini-pro-latest',
-      'gemini-robotics-er-2-preview',
-      'gemini-robotics-er-2-streaming-preview'
+      'gemini-robotics-er-2-preview'
     ]
   },
   groq: { 
@@ -335,8 +322,36 @@ export const VOICES = (() => {
   return voicesList;
 })();
 
-export const isDeprecatedOrNonChatGeminiModel = (_name: string): boolean => {
-  return false;
+export const isDeprecatedOrNonChatGeminiModel = (name: string): boolean => {
+  const m = (name || '').trim().toLowerCase().replace(/^models\//i, '');
+  if (!m) return true;
+  return (
+    m.startsWith('gemini-1.') ||
+    m.startsWith('gemini-2.0') ||
+    m.startsWith('gemini-2.5') ||
+    m.startsWith('gemma-2-') ||
+    m.startsWith('gemma-3-') ||
+    m.startsWith('gemma-3n-') ||
+    m === 'gemini-3.8-flash-lite' ||
+    m.includes('embedding') ||
+    m.includes('aqa') ||
+    m.includes('imagen') ||
+    m.includes('-image') ||
+    m.includes('nano-banana') ||
+    m.includes('-tts') ||
+    m.includes('lyria') ||
+    m.includes('transcribe') ||
+    m.includes('-live') ||
+    m.includes('native-audio') ||
+    m.includes('streaming') ||
+    m.includes('omni') ||
+    m.includes('genie') ||
+    m.includes('veo') ||
+    m.includes('antigravity') ||
+    m.includes('deep-research') ||
+    m.includes('computer-use') ||
+    m.includes('decision')
+  );
 };
 
 export const normalizeGeminiChatModel = (name?: string | null): string => {
@@ -344,6 +359,15 @@ export const normalizeGeminiChatModel = (name?: string | null): string => {
   const trimmed = name.trim().replace(/^models\//i, '');
   if (!trimmed) {
     return 'gemini-4-hydrogen';
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower === 'gemini-3-flash') return 'gemini-3-flash-preview';
+  if (lower === 'gemini-3.8-flash-lite' || lower === 'gemini-2.5-flash-lite' || lower === 'gemini-2.5-flash') {
+    return 'gemini-3.5-flash-lite';
+  }
+  if (lower === 'gemini-2.5-pro') return 'gemini-3.1-pro-preview';
+  if (isDeprecatedOrNonChatGeminiModel(lower)) {
+    return 'gemini-3.5-flash-lite';
   }
   return trimmed;
 };
@@ -365,7 +389,7 @@ export const getDynamicModelsList = (provider: AIProviderKey): string[] => {
   if (provider === 'gemini') {
     const curatedModels = AI_PROVIDERS.gemini.models;
     const validCached = (models as string[]).filter(
-      m => typeof m === 'string' && m.trim().length > 0
+      m => typeof m === 'string' && m.trim().length > 0 && !isDeprecatedOrNonChatGeminiModel(m)
     );
     return Array.from(new Set([...curatedModels, ...validCached]));
   }
@@ -719,7 +743,7 @@ IMPORTANT:
 - If the input is in Arabic, translate the core concept to English precisely.
 - Ensure the output is a single paragraph of descriptive, precise, and non-exaggerated English text.`;
 
-  const promptModels = ['gemini-3.1-flash-lite', 'gemini-3.1-flash-lite-preview', 'gemini-flash-lite-latest'];
+  const promptModels = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.1-flash-lite-preview'];
   let lastError = null;
 
   for (const promptModel of promptModels) {
@@ -759,7 +783,7 @@ export const generateShortArabicSummary = async (userInput: string, provider: AI
 يجب ألا تتجاوز الجملة 7 كلمات.
 أعد الجملة فقط، بدون أي مقدمات أو تعليقات.`;
 
-  const promptModels = ['gemini-3.1-flash-lite', 'gemini-3.1-flash-lite-preview', 'gemini-flash-lite-latest'];
+  const promptModels = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.1-flash-lite-preview'];
   let lastError = null;
 
   for (const promptModel of promptModels) {
@@ -1013,40 +1037,21 @@ export const callAIWithFailover = async (preferredProvider: AIProviderKey, messa
   }
   
   let lastError = null;
-  const MAX_RETRIES_PER_PROVIDER = 3;
 
   for (const provider of providers) {
-    const providerConfig = AI_PROVIDERS[provider];
+    // Gemini server proxy handles multi-key, v1/v1beta, search fallback, and model attempts natively without client sleeps
+    const maxAttempts = provider === 'gemini' ? 1 : 2;
     
-    for (let attempt = 0; attempt < MAX_RETRIES_PER_PROVIDER; attempt++) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         const modelToUse = provider === preferredProvider ? customModel : undefined;
         const result = await callAI(provider, enhancedMessages, modelToUse, config);
         return result;
       } catch (error: any) {
         lastError = error;
-        const errorMessage = error.message || "";
-        
-        // Check for rate limiting / quota exhaustion
-        if (errorMessage.includes("429") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("Quota exceeded") || errorMessage.includes("quota") || errorMessage.includes("تجاوز حد الاستخدام")) {
-          let delay = Math.pow(2, attempt) * 2000 + Math.random() * 1000;
-          const retryMatch = errorMessage.match(/retry in ([\d\.]+)s/i);
-          if (retryMatch && retryMatch[1]) {
-            delay = parseFloat(retryMatch[1]) * 1000 + 1000;
-          }
-          if (delay > 3000 || provider === 'gemini') {
-            console.warn(`Quota exhausted or severe rate limit on ${providerConfig.name} (${delay.toFixed(0)}ms wait required). Instantly switching to next provider...`);
-            break; // Skip remaining retries for this provider and move to next provider immediately
-          }
-          console.warn(`Rate limited on ${provider}. Short wait of ${delay.toFixed(0)}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
-        }
-
         console.warn(`Provider ${provider} attempt ${attempt + 1} failed:`, error);
-        
-        if (attempt < MAX_RETRIES_PER_PROVIDER - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+        if (attempt < maxAttempts - 1) {
+          await new Promise(resolve => setTimeout(resolve, 600));
         }
       }
     }
@@ -1389,19 +1394,15 @@ export const generateRecitationStream = async function* (text: string, voiceName
   const actualVoiceName = foundVoice ? foundVoice.baseVoice : voiceName;
 
   const selectedTtsModel = safeLocalStorageGet('ai_tts_model') || 'gemini-3.8-flash-lite-tts';
-  const allGeminiModels = getDynamicModelsList('gemini');
-  let ttsModels = allGeminiModels.filter(m => 
-    (m.startsWith('gemini-2.5') || m.startsWith('gemini-3.') || m.includes('-tts')) &&
-    !m.includes('image') && 
-    !m.includes('embedding') &&
-    !m.includes('search') &&
-    !m.includes('experimental')
-  );
-  if (selectedTtsModel && !selectedTtsModel.startsWith('gemini-2.0') && (selectedTtsModel.startsWith('gemini-') || selectedTtsModel.includes('-tts'))) {
-    ttsModels = [selectedTtsModel, ...ttsModels.filter(m => m !== selectedTtsModel)];
-  }
-  if (ttsModels.length === 0) {
-    ttsModels = ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts', 'gemini-2.5-flash'];
+  const officialTtsModels = [
+    'gemini-3.8-flash-lite-tts',
+    'gemini-3.8-flash-tts',
+    'gemini-3.1-flash-tts-preview',
+    'gemini-2.5-flash-preview-tts'
+  ];
+  let ttsModels = [...officialTtsModels];
+  if (selectedTtsModel && selectedTtsModel.includes('-tts')) {
+    ttsModels = [selectedTtsModel, ...officialTtsModels.filter(m => m !== selectedTtsModel)];
   }
   let currentModelIndex = 0;
 
@@ -1409,9 +1410,9 @@ export const generateRecitationStream = async function* (text: string, voiceName
     const chunkText = chunks[i].trim();
     if (!chunkText) continue;
     
-    let retries = 8; // Increased retries to handle rate limits
+    let retries = ttsModels.length + 1;
     let success = false;
-    let delay = 3000;
+    let delay = 500;
 
     while (retries > 0 && !success) {
       try {
@@ -1590,19 +1591,15 @@ export const generateRecitation = async (text: string, voiceName: string, apiKey
   const chunks = splitTextIntoChunks(text, 5000);
 
   const selectedTtsModel = safeLocalStorageGet('ai_tts_model') || 'gemini-3.8-flash-lite-tts';
-  const allGeminiModels = getDynamicModelsList('gemini');
-  let ttsModels = allGeminiModels.filter(m => 
-    (m.startsWith('gemini-2.5') || m.startsWith('gemini-3.') || m.includes('-tts')) &&
-    !m.includes('image') && 
-    !m.includes('embedding') &&
-    !m.includes('search') &&
-    !m.includes('experimental')
-  );
-  if (selectedTtsModel && !selectedTtsModel.startsWith('gemini-2.0') && (selectedTtsModel.startsWith('gemini-') || selectedTtsModel.includes('-tts'))) {
-    ttsModels = [selectedTtsModel, ...ttsModels.filter(m => m !== selectedTtsModel)];
-  }
-  if (ttsModels.length === 0) {
-    ttsModels = ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts', 'gemini-2.5-flash'];
+  const officialTtsModels = [
+    'gemini-3.8-flash-lite-tts',
+    'gemini-3.8-flash-tts',
+    'gemini-3.1-flash-tts-preview',
+    'gemini-2.5-flash-preview-tts'
+  ];
+  let ttsModels = [...officialTtsModels];
+  if (selectedTtsModel && selectedTtsModel.includes('-tts')) {
+    ttsModels = [selectedTtsModel, ...officialTtsModels.filter(m => m !== selectedTtsModel)];
   }
   let currentModelIndex = 0;
 
@@ -1613,9 +1610,9 @@ export const generateRecitation = async (text: string, voiceName: string, apiKey
     const chunkText = chunks[i].trim();
     if (!chunkText) continue;
     
-    let retries = 8; // Increased retries
+    let retries = ttsModels.length + 1;
     let success = false;
-    let delay = 3000; // Increased initial delay for quota errors
+    let delay = 500;
 
     while (retries > 0 && !success) {
       try {
@@ -1919,8 +1916,7 @@ export const generateContextualSuggestions = async (
     const res = await callAIWithFailover(
       'gemini',
       [{ role: 'user', content: prompt }],
-      'gemini-3.1-flash-lite',
-      { temperature: 0.7 }
+      'gemini-3.5-flash-lite'
     );
 
     const parsed = parseAIJson<string[] | null>(res.content, null);

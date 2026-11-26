@@ -151,7 +151,7 @@ export const TajweedVoiceAnalyzer: React.FC<TajweedVoiceAnalyzerProps> = ({ onCl
 
       const aiResponse = await callAIWithFailover('gemini', [
         { role: 'user', content: tajweedPrompt }
-      ], 'gemini-2.5-flash', { responseMimeType: 'application/json' });
+      ], 'gemini-3.5-flash-lite', { responseMimeType: 'application/json' });
 
       let parsedResult;
       try {

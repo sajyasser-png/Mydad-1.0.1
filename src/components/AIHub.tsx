@@ -1102,12 +1102,12 @@ ${commandText}`;
         });
       }
 
-      // Add recent history (last 20 messages for context)
-      const recentHistory = currentMessages.filter(m => m.type !== 'event').slice(-20).map(m => ({
+      // Preserve full conversation history without artificial truncation
+      const fullHistory = currentMessages.filter(m => m.type !== 'event').map(m => ({
         role: m.role,
         content: m.content
       }));
-      history.push(...recentHistory);
+      history.push(...fullHistory);
       
       // Add current message
       history.push({ role: 'user', content: messageText });
@@ -1142,9 +1142,10 @@ ${commandText}`;
 
           const candidateModels = Array.from(new Set([
             normalizeGeminiChatModel(model),
+            'gemini-3.5-flash-lite',
+            'gemini-3.1-flash-lite',
             'gemini-4-hydrogen',
-            'gemini-3-flash-preview',
-            'gemini-3.1-flash-lite'
+            'gemini-3-flash-preview'
           ]));
           let fullContent = '';
           let fullThought = '';
@@ -1260,10 +1261,10 @@ ${commandText}`;
 
             const candidateModels = Array.from(new Set([
               normalizeGeminiChatModel(model),
+              'gemini-3.5-flash-lite',
+              'gemini-3.1-flash-lite',
               'gemini-4-hydrogen',
-              'gemini-3-flash-preview',
-              'gemini-3-flash-preview',
-              'gemini-3.1-flash-lite'
+              'gemini-3-flash-preview'
             ]));
             let fullContent = '';
             let fullThought = '';

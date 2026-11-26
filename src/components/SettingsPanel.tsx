@@ -103,9 +103,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     if (provider === 'edge_tts') {
       return (AI_PROVIDERS.edge_tts as any).models || [];
     }
-    const defaults = ['gemini-3.8-flash-lite-tts', 'gemini-3.8-flash-tts', 'gemini-3.1-flash-tts-preview', 'gemini-2.5-flash', 'gemini-3-flash-preview'];
-    return Array.from(new Set([...defaults, ...geminiModels]));
-  }, [geminiModels, provider]);
+    return [
+      'gemini-3.8-flash-lite-tts',
+      'gemini-3.8-flash-tts',
+      'gemini-3.1-flash-tts-preview',
+      'gemini-2.5-flash-preview-tts'
+    ];
+  }, [provider]);
 
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [refreshMessage, setRefreshMessage] = React.useState<{ text: string; type: 'success' | 'error' | 'loading' } | null>(null);
@@ -248,8 +252,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   {m === 'gemini-3.8-flash-lite-tts' ? 'Gemini 3.8 Flash Lite TTS' :
                    m === 'gemini-3.8-flash-tts' ? 'Gemini 3.8 Flash TTS' :
                    m === 'gemini-3.1-flash-tts-preview' ? 'Gemini 3.1 Flash TTS Preview' :
-                   m === 'gemini-2.5-flash' ? 'Gemini 2.5 Flash' :
-                   m === 'gemini-3-flash-preview' ? 'Gemini 3 Flash Preview' : m}
+                   m === 'gemini-2.5-flash-preview-tts' ? 'Gemini 2.5 Flash Preview TTS' : m}
                 </option>
               ))}
             </select>
