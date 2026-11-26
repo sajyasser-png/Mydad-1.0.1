@@ -108,7 +108,7 @@ export const MidadAlRahman = React.memo(({
     if (savedModel && typeof savedModel === 'string' && availableModels && Array.isArray(availableModels) && availableModels.includes(savedModel)) {
       return `${safeProvider}|${savedModel}`;
     }
-    const defaultM = providerConfig?.defaultModel || 'gemini-4-hydrogen';
+    const defaultM = providerConfig?.defaultModel || 'gemini-3-flash-preview';
     return `${safeProvider}|${defaultM}`;
   });
 

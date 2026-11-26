@@ -574,7 +574,7 @@ function App() {
   });
 
   useEffect(() => {
-    fetchAllProvidersModels().catch(console.error);
+    initModelUpdater();
   }, []);
 
   useEffect(() => {

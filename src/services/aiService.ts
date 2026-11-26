@@ -5,9 +5,10 @@ export const AI_PROVIDERS = {
     name: 'Google Gemini', 
     keyName: 'gemini_api_key', 
     baseURL: 'https://generativelanguage.googleapis.com/v1beta', 
-    defaultModel: 'gemini-4-hydrogen',
+    defaultModel: 'gemini-3-flash-preview',
     isFree: true,
     models: [
+      'gemini-3-flash-preview',
       'gemini-4-hydrogen',
       'gemini-4-neon',
       'gemini-4-argon',
@@ -19,7 +20,6 @@ export const AI_PROVIDERS = {
       'gemini-3.5-flash-lite',
       'gemini-3.1-flash-lite',
       'gemini-3.1-flash-lite-preview',
-      'gemini-3-flash-preview',
       'gemini-3.1-pro-preview',
       'gemini-3.1-pro-preview-customtools',
       'gemma-4-31b-it',
@@ -322,52 +322,15 @@ export const VOICES = (() => {
   return voicesList;
 })();
 
-export const isDeprecatedOrNonChatGeminiModel = (name: string): boolean => {
-  const m = (name || '').trim().toLowerCase().replace(/^models\//i, '');
-  if (!m) return true;
-  return (
-    m.startsWith('gemini-1.') ||
-    m.startsWith('gemini-2.0') ||
-    m.startsWith('gemini-2.5') ||
-    m.startsWith('gemma-2-') ||
-    m.startsWith('gemma-3-') ||
-    m.startsWith('gemma-3n-') ||
-    m === 'gemini-3.8-flash-lite' ||
-    m.includes('embedding') ||
-    m.includes('aqa') ||
-    m.includes('imagen') ||
-    m.includes('-image') ||
-    m.includes('nano-banana') ||
-    m.includes('-tts') ||
-    m.includes('lyria') ||
-    m.includes('transcribe') ||
-    m.includes('-live') ||
-    m.includes('native-audio') ||
-    m.includes('streaming') ||
-    m.includes('omni') ||
-    m.includes('genie') ||
-    m.includes('veo') ||
-    m.includes('antigravity') ||
-    m.includes('deep-research') ||
-    m.includes('computer-use') ||
-    m.includes('decision')
-  );
+export const isDeprecatedOrNonChatGeminiModel = (_name: string): boolean => {
+  return false;
 };
 
 export const normalizeGeminiChatModel = (name?: string | null): string => {
-  if (!name || typeof name !== 'string') return 'gemini-4-hydrogen';
+  if (!name || typeof name !== 'string') return 'gemini-3-flash-preview';
   const trimmed = name.trim().replace(/^models\//i, '');
   if (!trimmed) {
-    return 'gemini-4-hydrogen';
-  }
-  const lower = trimmed.toLowerCase();
-  if (lower === 'gemini-3-flash') return 'gemini-3-flash-preview';
-  if (lower === 'gemini-3.8-flash-lite' || lower === 'gemini-2.5-flash-lite' || lower === 'gemini-2.5-flash') {
-    return 'gemini-3.5-flash-lite';
-  }
-  if (lower === 'gemini-2.5-pro') return 'gemini-3.1-pro-preview';
-  if (isDeprecatedOrNonChatGeminiModel(lower)) {
-    return 'gemini-3.5-flash-lite';
+    return 'gemini-3-flash-preview';
   }
   return trimmed;
 };
@@ -387,11 +350,14 @@ export const getDynamicModelsList = (provider: AIProviderKey): string[] => {
   }
   
   if (provider === 'gemini') {
-    const curatedModels = AI_PROVIDERS.gemini.models;
     const validCached = (models as string[]).filter(
-      m => typeof m === 'string' && m.trim().length > 0 && !isDeprecatedOrNonChatGeminiModel(m)
+      m => typeof m === 'string' && m.trim().length > 0
     );
-    return Array.from(new Set([...curatedModels, ...validCached]));
+    const merged = Array.from(new Set([...validCached, ...AI_PROVIDERS.gemini.models]));
+    if (merged.includes('gemini-3-flash-preview')) {
+      return ['gemini-3-flash-preview', ...merged.filter(m => m !== 'gemini-3-flash-preview')];
+    }
+    return merged;
   }
   
   return models as string[];
@@ -454,26 +420,98 @@ export const fetchAndUpdateModels = async (provider: AIProviderKey, apiKey?: str
   const data = await response.json();
   if (Array.isArray(data.models) && data.models.length > 0) {
     const mergedModels = provider === 'gemini'
-      ? Array.from(new Set([...AI_PROVIDERS.gemini.models, ...data.models]))
+      ? Array.from(new Set([
+          ...(data.models.includes('gemini-3-flash-preview') ? ['gemini-3-flash-preview'] : []),
+          ...data.models
+        ]))
       : data.models;
+    const now = Date.now();
+    const updatedAt = typeof data.updatedAt === 'number' ? data.updatedAt : now;
+    const nextUpdateAt = typeof data.nextUpdateAt === 'number' ? data.nextUpdateAt : (updatedAt + MODELS_REFRESH_INTERVAL_MS);
     safeLocalStorageSet(`dynamic_models_${provider}`, JSON.stringify(mergedModels));
-    safeLocalStorageSet(`dynamic_models_updated_at_${provider}`, Date.now().toString());
-    window.dispatchEvent(new CustomEvent('models_updated', { detail: { provider, models: mergedModels } }));
+    safeLocalStorageSet(`dynamic_models_updated_at_${provider}`, String(updatedAt));
+    safeLocalStorageSet(`dynamic_models_next_update_${provider}`, String(nextUpdateAt));
+    window.dispatchEvent(new CustomEvent('models_updated', { detail: { provider, models: mergedModels, updatedAt, nextUpdateAt } }));
     return mergedModels;
   }
   throw new Error("لم يتم العثور على أي نماذج نشطة لهذا المزود");
 };
 
+const MODELS_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 let lastFetchTime = 0;
 let cachedResults: Record<string, string[]> | null = null;
+let didInitModelUpdater = false;
+let dailyModelRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+const isModelsCacheExpired = (provider: AIProviderKey = 'gemini'): boolean => {
+  const updatedAtRaw = safeLocalStorageGet(`dynamic_models_updated_at_${provider}`);
+  const nextUpdateRaw = safeLocalStorageGet(`dynamic_models_next_update_${provider}`);
+  const cachedModelsRaw = safeLocalStorageGet(`dynamic_models_${provider}`);
+  if (!updatedAtRaw || !cachedModelsRaw) return true;
+  const now = Date.now();
+  const nextUpdateAt = Number(nextUpdateRaw) || (Number(updatedAtRaw) + MODELS_REFRESH_INTERVAL_MS);
+  return now >= nextUpdateAt;
+};
+
+const scheduleNextDailyModelSync = () => {
+  if (typeof window === 'undefined') return;
+  if (dailyModelRefreshTimer) {
+    clearTimeout(dailyModelRefreshTimer);
+    dailyModelRefreshTimer = null;
+  }
+  const updatedAtRaw = safeLocalStorageGet('dynamic_models_updated_at_gemini');
+  const nextUpdateRaw = safeLocalStorageGet('dynamic_models_next_update_gemini');
+  const now = Date.now();
+  const nextUpdateAt = Number(nextUpdateRaw) || (updatedAtRaw ? Number(updatedAtRaw) + MODELS_REFRESH_INTERVAL_MS : now + MODELS_REFRESH_INTERVAL_MS);
+  const delayMs = Math.max(60 * 1000, Math.min(MODELS_REFRESH_INTERVAL_MS, nextUpdateAt - now));
+
+  dailyModelRefreshTimer = setTimeout(async () => {
+    try {
+      await fetchAllProvidersModels(true);
+    } catch (err) {
+      console.warn('Scheduled 24-hour model auto-update failed:', err);
+    } finally {
+      scheduleNextDailyModelSync();
+    }
+  }, delayMs);
+};
 
 export const initModelUpdater = () => {
-  // No-op to prevent background requests unless requested by user
+  if (typeof window === 'undefined' || didInitModelUpdater) return;
+  didInitModelUpdater = true;
+
+  const checkAndRefreshIfNeeded = async (forceInitial: boolean = false) => {
+    if (forceInitial || isModelsCacheExpired('gemini')) {
+      try {
+        await fetchAllProvidersModels(true);
+      } catch (err) {
+        console.warn('Auto-fetch all API models failed:', err);
+      }
+    }
+    scheduleNextDailyModelSync();
+  };
+
+  // Run immediately if cache is missing/stale or has fewer than 30 Gemini models (e.g. first visit or after 24h)
+  const cachedGemini = getDynamicModelsList('gemini');
+  const needsImmediateSync = isModelsCacheExpired('gemini') || cachedGemini.length < 30;
+  checkAndRefreshIfNeeded(needsImmediateSync);
+
+  // Automatically re-check and save newly added models when the user opens the app again the next day
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && isModelsCacheExpired('gemini')) {
+      checkAndRefreshIfNeeded(true);
+    }
+  });
+  window.addEventListener('focus', () => {
+    if (isModelsCacheExpired('gemini')) {
+      checkAndRefreshIfNeeded(true);
+    }
+  });
 };
 
 export const fetchAllProvidersModels = async (force: boolean = true): Promise<Record<string, string[]>> => {
   const now = Date.now();
-  if (!force && cachedResults && (now - lastFetchTime < 5 * 60 * 1000)) {
+  if (!force && cachedResults && (now - lastFetchTime < MODELS_REFRESH_INTERVAL_MS)) {
     return cachedResults;
   }
 
@@ -488,8 +526,8 @@ export const fetchAllProvidersModels = async (force: boolean = true): Promise<Re
         results[provider] = models;
       } catch (e) {
         if (provider === 'gemini') {
-          results.gemini = AI_PROVIDERS.gemini.models;
-          safeLocalStorageSet('dynamic_models_gemini', JSON.stringify(results.gemini));
+          const existing = getDynamicModelsList('gemini');
+          results.gemini = existing.length > 0 ? existing : AI_PROVIDERS.gemini.models;
         }
         console.warn(`Failed to fetch models for ${provider}:`, e);
       }
@@ -498,6 +536,7 @@ export const fetchAllProvidersModels = async (force: boolean = true): Promise<Re
 
   lastFetchTime = Date.now();
   cachedResults = results;
+  scheduleNextDailyModelSync();
   window.dispatchEvent(new CustomEvent('models_updated', { detail: { results } }));
   return results;
 };

@@ -507,7 +507,7 @@ export const AIHub: React.FC<AIHubProps> = ({
     if (safeProvider === 'gemini' && savedModel) {
       savedModel = normalizeGeminiChatModel(savedModel);
     }
-    return `${safeProvider}|${savedModel || AI_PROVIDERS[safeProvider]?.defaultModel || 'gemini-4-hydrogen'}`;
+    return `${safeProvider}|${savedModel || AI_PROVIDERS[safeProvider]?.defaultModel || 'gemini-3-flash-preview'}`;
   });
   const [localApiKey, setLocalApiKey] = useState(() => {
     const safeProvider = AI_PROVIDERS[provider] ? provider : 'gemini';

@@ -250,6 +250,7 @@ async function startServer() {
     });
 
   const CURATED_GEMINI_CHAT_MODELS = [
+    'gemini-3-flash-preview',
     'gemini-4-hydrogen',
     'gemini-4-neon',
     'gemini-4-argon',
@@ -261,7 +262,6 @@ async function startServer() {
     'gemini-3.5-flash-lite',
     'gemini-3.1-flash-lite',
     'gemini-3.1-flash-lite-preview',
-    'gemini-3-flash-preview',
     'gemini-3.1-pro-preview',
     'gemini-3.1-pro-preview-customtools',
     'gemma-4-31b-it',
@@ -278,37 +278,6 @@ async function startServer() {
   const isGemmaModel = (mName: string): boolean => mName.toLowerCase().startsWith('gemma-');
   const isRoboticsModel = (mName: string): boolean => mName.toLowerCase().includes('robotics');
 
-  const isNonChatOrRetiredGeminiModel = (mName: string): boolean => {
-    const m = (mName || '').toLowerCase();
-    return (
-      m.startsWith('gemini-1.') ||
-      m.startsWith('gemini-2.0') ||
-      m.startsWith('gemini-2.5') ||
-      m.startsWith('gemma-2-') ||
-      m.startsWith('gemma-3-') ||
-      m.startsWith('gemma-3n-') ||
-      m === 'gemini-3.8-flash-lite' ||
-      m.includes('embedding') ||
-      m.includes('aqa') ||
-      m.includes('imagen') ||
-      m.includes('-image') ||
-      m.includes('nano-banana') ||
-      m.includes('-tts') ||
-      m.includes('lyria') ||
-      m.includes('transcribe') ||
-      m.includes('-live') ||
-      m.includes('native-audio') ||
-      m.includes('streaming') ||
-      m.includes('omni') ||
-      m.includes('genie') ||
-      m.includes('veo') ||
-      m.includes('antigravity') ||
-      m.includes('deep-research') ||
-      m.includes('computer-use') ||
-      m.includes('decision')
-    );
-  };
-
   const supportsThinking = (mName: string): boolean => {
     const m = mName.toLowerCase();
     if (isGemmaModel(m) || isRoboticsModel(m)) return false;
@@ -322,13 +291,9 @@ async function startServer() {
   };
 
   const normalizeModel = (rawModel: string): string => {
-    if (!rawModel) return 'gemini-4-hydrogen';
+    if (!rawModel) return 'gemini-3-flash-preview';
     const trimmed = rawModel.trim().replace(/^models\//i, '');
-    if (!trimmed) return 'gemini-4-hydrogen';
-    const lower = trimmed.toLowerCase();
-    if (lower === 'gemini-3-flash') return 'gemini-3-flash-preview';
-    if (lower === 'gemini-2.5-flash' || lower === 'gemini-2.5-flash-lite' || lower === 'gemini-3.8-flash-lite') return 'gemini-3.5-flash-lite';
-    if (lower === 'gemini-2.5-pro') return 'gemini-3.1-pro-preview';
+    if (!trimmed) return 'gemini-3-flash-preview';
     return trimmed;
   };
 
@@ -798,7 +763,7 @@ ${systemInstruction || ''}`;
       
       if (candidateKeys.length === 0) return res.status(401).json({ error: "Gemini API key is missing" });
 
-      const requestedModel = model || 'gemini-4-hydrogen';
+      const requestedModel = model || 'gemini-3-flash-preview';
       const reqWebSearch = !!config?.enableWebSearch;
       const reqDeepThinking = !!config?.enableDeepThinking;
 
@@ -951,7 +916,7 @@ ${systemInstruction || ''}`;
       const candidateKeys = getCandidateKeys(apiKey);
       if (candidateKeys.length === 0) return res.status(401).json({ error: "Gemini API key is missing" });
 
-      const requestedModel = model || 'gemini-4-hydrogen';
+      const requestedModel = model || 'gemini-3-flash-preview';
       const reqWebSearch = !!config?.enableWebSearch;
       const reqDeepThinking = !!config?.enableDeepThinking;
 
@@ -1395,6 +1360,126 @@ ${systemInstruction || ''}`;
     }
   });
 
+  // Persistent 24-hour auto-sync cache for ALL Gemini API models
+  const MODELS_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
+  const MODELS_CACHE_FILE = path.join(process.cwd(), '.gemini-models-cache.json');
+
+  interface GeminiModelsCache {
+    models: string[];
+    updatedAt: number;
+    nextUpdateAt: number;
+  }
+
+  let memoryGeminiModelsCache: GeminiModelsCache | null = null;
+
+  const readSavedGeminiModelsCache = (): GeminiModelsCache | null => {
+    if (memoryGeminiModelsCache && memoryGeminiModelsCache.models.length > 0) {
+      return memoryGeminiModelsCache;
+    }
+    try {
+      if (fs.existsSync(MODELS_CACHE_FILE)) {
+        const raw = JSON.parse(fs.readFileSync(MODELS_CACHE_FILE, 'utf8'));
+        if (raw && Array.isArray(raw.models) && raw.models.length > 0) {
+          memoryGeminiModelsCache = {
+            models: raw.models,
+            updatedAt: Number(raw.updatedAt) || Date.now(),
+            nextUpdateAt: Number(raw.nextUpdateAt) || (Date.now() + MODELS_SYNC_INTERVAL_MS)
+          };
+          return memoryGeminiModelsCache;
+        }
+      }
+    } catch (e) {
+      console.warn('[ModelsAutoSync] Failed to read disk cache:', e);
+    }
+    return null;
+  };
+
+  const writeSavedGeminiModelsCache = (models: string[]): GeminiModelsCache => {
+    const now = Date.now();
+    const cacheObj: GeminiModelsCache = {
+      models,
+      updatedAt: now,
+      nextUpdateAt: now + MODELS_SYNC_INTERVAL_MS
+    };
+    memoryGeminiModelsCache = cacheObj;
+    try {
+      fs.writeFileSync(MODELS_CACHE_FILE, JSON.stringify(cacheObj, null, 2), 'utf8');
+    } catch (e) {
+      console.warn('[ModelsAutoSync] Could not persist cache to disk (using memory cache):', e);
+    }
+    return cacheObj;
+  };
+
+  const syncGeminiModelsFromApi = async (candidateKeys: string[], forceRefresh: boolean = false): Promise<GeminiModelsCache> => {
+    const existingCache = readSavedGeminiModelsCache();
+    const now = Date.now();
+
+    if (!forceRefresh && existingCache && (now - existingCache.updatedAt < MODELS_SYNC_INTERVAL_MS)) {
+      return existingCache;
+    }
+
+    if (candidateKeys.length > 0) {
+      for (const keyToTry of candidateKeys) {
+        try {
+          const allModelIds: string[] = [];
+          for (const apiVer of ['v1beta', 'v1']) {
+            let pageToken = '';
+            do {
+              const url = `https://generativelanguage.googleapis.com/${apiVer}/models?pageSize=1000&key=${keyToTry}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+              const response = await fetch(url);
+              if (!response.ok) {
+                if (apiVer === 'v1') break;
+                const errText = await response.text().catch(() => '');
+                throw new Error(`Gemini API returned status ${response.status}: ${errText}`);
+              }
+              const data: any = await response.json();
+              if (Array.isArray(data.models)) {
+                for (const m of data.models) {
+                  const id = String(m?.name || '').replace(/^models\//i, '').trim();
+                  if (id) allModelIds.push(id);
+                }
+              }
+              pageToken = data.nextPageToken || '';
+            } while (pageToken);
+          }
+
+          const uniqueApiModels = Array.from(new Set(allModelIds));
+          if (uniqueApiModels.length > 0) {
+            const orderedModels = uniqueApiModels.includes('gemini-3-flash-preview')
+              ? ['gemini-3-flash-preview', ...uniqueApiModels.filter(id => id !== 'gemini-3-flash-preview')]
+              : uniqueApiModels;
+            const saved = writeSavedGeminiModelsCache(orderedModels);
+            console.log(`[ModelsAutoSync] Auto-saved ${saved.models.length} Gemini models from API. Next 24h refresh at ${new Date(saved.nextUpdateAt).toISOString()}`);
+            return saved;
+          }
+        } catch (fetchError: any) {
+          console.warn('[ModelsAutoSync] Gemini API fetch attempt failed:', fetchError?.message || fetchError);
+        }
+      }
+    }
+
+    if (existingCache) {
+      return existingCache;
+    }
+
+    return {
+      models: [...CURATED_GEMINI_CHAT_MODELS],
+      updatedAt: now,
+      nextUpdateAt: now + MODELS_SYNC_INTERVAL_MS
+    };
+  };
+
+  // Initial startup sync + automatic recurring 24-hour refresh & save for tomorrow
+  const runScheduledDailyModelsSync = () => {
+    const keys = getCandidateKeys(undefined);
+    if (keys.length === 0) return;
+    syncGeminiModelsFromApi(keys, true).catch((err) => {
+      console.warn('[ModelsAutoSync] Scheduled 24h sync failed:', err?.message || err);
+    });
+  };
+  runScheduledDailyModelsSync();
+  setInterval(runScheduledDailyModelsSync, MODELS_SYNC_INTERVAL_MS);
+
   // Fetch models dynamically from provider source
   app.post("/api/models/:provider", async (req, res) => {
     const { provider } = req.params;
@@ -1419,50 +1504,14 @@ ${systemInstruction || ''}`;
 
       if (provider === 'gemini') {
         const candidateKeys = getCandidateKeys(apiKey);
-        if (candidateKeys.length === 0) {
-          models = [...CURATED_GEMINI_CHAT_MODELS];
-        } else {
-          let fetched = false;
-          for (const keyToTry of candidateKeys) {
-            try {
-              const allRawModels: any[] = [];
-              for (const apiVer of ['v1', 'v1beta']) {
-                let pageToken = '';
-                do {
-                  const url = `https://generativelanguage.googleapis.com/${apiVer}/models?pageSize=100&key=${keyToTry}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
-                  const response = await fetch(url);
-                  if (!response.ok) {
-                    if (apiVer === 'v1') break;
-                    const errText = await response.text().catch(() => '');
-                    throw new Error(`Gemini API returned status ${response.status}: ${errText}`);
-                  }
-                  const data: any = await response.json();
-                  if (Array.isArray(data.models)) {
-                    allRawModels.push(...data.models);
-                  }
-                  pageToken = data.nextPageToken || '';
-                } while (pageToken);
-              }
-
-              const apiModels = allRawModels
-                .filter((m: any) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
-                .map((m: any) => (m.name || '').replace('models/', '').trim())
-                .filter((id: string) => !!id && !isNonChatOrRetiredGeminiModel(id));
-
-              models = Array.from(new Set([
-                ...CURATED_GEMINI_CHAT_MODELS,
-                ...apiModels
-              ]));
-              fetched = true;
-              break;
-            } catch (fetchError: any) {
-              console.warn("Gemini models fetch attempt failed, trying next key or curated list:", fetchError.message || fetchError);
-            }
-          }
-          if (!fetched) {
-            models = [...CURATED_GEMINI_CHAT_MODELS];
-          }
-        }
+        const synced = await syncGeminiModelsFromApi(candidateKeys, true);
+        models = synced.models;
+        res.status(200).json({
+          models,
+          updatedAt: synced.updatedAt,
+          nextUpdateAt: synced.nextUpdateAt
+        });
+        return;
       } else if (provider === 'groq') {
         const response = await fetch(`https://api.groq.com/openai/v1/models`, {
           headers: { 'Authorization': `Bearer ${finalKey}` }
@@ -1527,11 +1576,7 @@ ${systemInstruction || ''}`;
         return res.status(400).json({ error: "المزود غير مدعوم للتحديث التلقائي" });
       }
 
-      // Filter empty and dedup (preserve curated priority order for Gemini)
-      models = Array.from(new Set(models.filter(m => !!m)));
-      if (provider !== 'gemini') {
-        models.sort();
-      }
+      models = Array.from(new Set(models.filter(m => !!m))).sort();
 
       if (models.length === 0) {
         throw new Error("لم يتم العثور على أي نماذج نشطة للمزود");

@@ -71,7 +71,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       localStorage.getItem('midad_model') ||
       localStorage.getItem(`ai_model_${provider}`) ||
       AI_PROVIDERS[provider]?.defaultModel ||
-      'gemini-4-hydrogen'
+      'gemini-3-flash-preview'
     );
   });
 
@@ -103,13 +103,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     if (provider === 'edge_tts') {
       return (AI_PROVIDERS.edge_tts as any).models || [];
     }
-    return [
+    const defaults = [
       'gemini-3.8-flash-lite-tts',
       'gemini-3.8-flash-tts',
       'gemini-3.1-flash-tts-preview',
       'gemini-2.5-flash-preview-tts'
     ];
-  }, [provider]);
+    return Array.from(new Set([...defaults, ...geminiModels]));
+  }, [geminiModels, provider]);
 
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [refreshMessage, setRefreshMessage] = React.useState<{ text: string; type: 'success' | 'error' | 'loading' } | null>(null);
