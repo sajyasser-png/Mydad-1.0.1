@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mydad live</title>
+    <meta name="description" content="«مِـدَادُ الـرَّحْـمَـنِ»«مِـنَـصَّـةٌ قُـرْآنِـيَّـةٌ مُـتَـكَـامِـلَـةٌ تَـجْـمَـعُ بَـيْـنَ تِـلَاوَةِ الْـمُـصْـحَـفِ الـشَّـرِيفِ وَتَـفْـسِـيرِهِ، مَـعَ أَدَوَاتٍ يَـوْمِـيَّـةٍ مُـسَـاعِـدَةٍ تَـشْـمَـلُ مَـوَاقِـيـتَ الـصَّـلَاةِ، الْـقِـبْـلَـةَ، الْأَذْكَـارَ، الـسُّـبْـحَـةَ، وَالْـمُـفَـكِّـرَةَ الْـهِـجْـرِيَّـةَ.»" />
+    <meta property="og:title" content="Mydad live" />
+    <meta property="og:description" content="«مِـدَادُ الـرَّحْـمَـنِ»«مِـنَـصَّـةٌ قُـرْآنِـيَّـةٌ مُـتَـكَـامِـلَـةٌ تَـجْـمَـعُ بَـيْـنَ تِـلَاوَةِ الْـمُـصْـحَـفِ الـشَّـرِيفِ وَتَـفْـسِـيرِهِ، مَـعَ أَدَوَاتٍ يَـوْمِـيَّـةٍ مُـسَـاعِـدَةٍ تَـشْـمَـلُ مَـوَاقِـيـتَ الـصَّـلَاةِ، الْـقِـبْـلَـةَ، الْأَذْكَـارَ، الـسُّـبْـحَـةَ، وَالْـمُـفَـكِّـرَةَ الْـهِـجْـرِيَّـةَ.»" />
+    <meta name="theme-color" content="#101825" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Mydad live" />
+    <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/pwa-512x512.png" />
+    <script>
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        window.__deferredPWAInstallPrompt = e;
+      });
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      (function(){
+        try {
+          if (!window.__chatbaseSafeListenerPatched) {
+            window.__chatbaseSafeListenerPatched = true;
+            var origAdd = window.addEventListener.bind(window);
+            var origRemove = window.removeEventListener.bind(window);
+            var listenerMaps = {
+              resize: new WeakMap(),
+              message: new WeakMap()
+            };
+            window.addEventListener = function(type, listener, options) {
+              var map = listenerMaps[type];
+              if (map && typeof listener === 'function') {
+                var wrapped = map.get(listener);
+                if (!wrapped) {
+                  wrapped = function(event) {
+                    try {
+                      return listener.call(this, event);
+                    } catch (err) {
+                      var msg = err && err.message ? String(err.message) : '';
+                      var stack = err && err.stack ? String(err.stack) : '';
+                      if (
+                        err instanceof TypeError &&
+                        (msg.indexOf('postMessage') !== -1 || stack.indexOf('chatbase') !== -1)
+                      ) {
+                        return;
+                      }
+                      throw err;
+                    }
+                  };
+                  map.set(listener, wrapped);
+                }
+                return origAdd(type, wrapped, options);
+              }
+              return origAdd(type, listener, options);
+            };
+            window.removeEventListener = function(type, listener, options) {
+              var map = listenerMaps[type];
+              if (map && typeof listener === 'function') {
+                var wrapped = map.get(listener) || listener;
+                return origRemove(type, wrapped, options);
+              }
+              return origRemove(type, listener, options);
+            };
+          }
+
+          if(!window.chatbase||window.chatbase("getState")!=="initialized"){
+            window.chatbase=function(...args){
+              if(!window.chatbase.q){window.chatbase.q=[]}
+              window.chatbase.q.push(args);
+            };
+            window.chatbase=new Proxy(window.chatbase,{
+              get(target,prop){
+                if(prop==="q"){return target.q}
+                if(typeof prop==="symbol"||prop==="then"){return undefined}
+                return function(...args){return target(prop,...args)};
+              }
+            });
+          }
+
+          const identifyUser = async () => {
+            try {
+              const res = await fetch('/api/chatbase/token');
+              if (!res.ok) return;
+              const data = await res.json();
+              if (!data || !data.token) return;
+
+              const tryIdentify = function (attemptsLeft) {
+                try {
+                  if (typeof window.chatbase !== 'function') return;
+                  if (window.chatbase('getState') !== 'initialized') {
+                    window.chatbase('identify', { token: data.token });
+                    return;
+                  }
+                  const bubbleWin = document.getElementById('chatbase-bubble-window');
+                  const iframe = bubbleWin ? bubbleWin.querySelector('iframe') : null;
+                  if (iframe && iframe.contentWindow) {
+                    window.chatbase('identify', { token: data.token });
+                    return;
+                  }
+                  if (attemptsLeft > 0) {
+                    setTimeout(function () { tryIdentify(attemptsLeft - 1); }, 300);
+                  }
+                } catch (err) {
+                  console.warn('Chatbase identify skipped:', err);
+                }
+              };
+
+              tryIdentify(20);
+            } catch (e) {
+              console.warn('Chatbase identity verification skipped or failed:', e);
+            }
+          };
+
+          const onLoad=function(){
+            try {
+              if (document.getElementById("UKTFt1UYRMXEGBSoAslXj")) return;
+              const script=document.createElement("script");
+              script.src="https://www.chatbase.co/embed.min.js";
+              script.id="UKTFt1UYRMXEGBSoAslXj";
+              script.setAttribute("domain","www.chatbase.co");
+              script.domain="www.chatbase.co";
+              script.crossOrigin="anonymous";
+              script.defer=true;
+              script.onload = identifyUser;
+              script.onerror = function(){
+                console.warn('Chatbase widget script failed to load.');
+              };
+              (document.body || document.head).appendChild(script);
+            } catch (err) {
+              console.warn('Chatbase script injection skipped:', err);
+            }
+          };
+          if(document.readyState==="complete"){
+            onLoad();
+          }else{
+            window.addEventListener("load",onLoad);
+          }
+        } catch (e) {
+          console.warn('Chatbase setup skipped:', e);
+        }
+      })();
+    </script>
+  </body>
+</html>
+
